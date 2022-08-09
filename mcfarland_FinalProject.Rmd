@@ -1,0 +1,327 @@
+---
+title: "Gina McFarland Final Project - 4442"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(DataCombine)
+library(lattice)
+#library(lme4)
+library(nlme)
+library(lmerTest)
+library(dplyr)
+```
+
+## R Markdown
+
+```{r}
+# loads data file
+world_happ <- read.csv(file='CombinedDat_WorldHappinessReport.csv')
+
+# variable processing
+names(world_happ)[1] <- "country"
+names(world_happ)[2] <- "year"
+world_happ$year <- as.factor(world_happ$year)
+names(world_happ)[4]<- "social.support"
+names(world_happ)[5]<- "life.expectancy"
+names(world_happ)[6]<- "freedom.choices"
+names(world_happ)[7]<- "perceptions.corruption"
+world_happ$perceptions.corruption<-as.numeric(world_happ$perceptions.corruption)
+names(world_happ)[8]<- "generosity"
+names(world_happ)[9]<- "overall.rank"
+world_happ$overall.rank <- as.numeric(world_happ$overall.rank)
+world_happ$overall.rank <- NULL
+names(world_happ)[9]<- "score"
+```
+
+
+```{r}
+sum(is.na(world_happ))
+```
+
+
+```{r}
+world_happ[is.na(world_happ$perceptions.corruption),]
+```
+
+
+```{r}
+world_happ <- DropNA(world_happ)
+```
+```{r}
+world_happ[is.na(world_happ$perceptions.corruption),]
+```
+The UAE 2018 perceptions.corruption variable was NA in the original data set. Since that data is irretrievable, that row has been removed. That is the only N/A in the data set.
+
+
+```{r}
+#MultiVar Non-graphical
+
+table(world_happ$country, exclude=FALSE)
+
+(sum(dplyr::count(world_happ,country)==1))
+
+counts<-(world_happ %>% count(country))
+
+one_country <- counts[counts$n == 1,]
+
+five_country <- counts[counts$n == 5,]
+
+three_country <- counts[counts$n >2,] # 3 or more 
+
+four_country <- counts[counts$n > 3,] # 4 or more
+
+# 7 countries with one observation; need to subset data to exclude these 
+# this is necessary since two points are needed to fit a line, not possible with 1
+
+world_happ_subset <- filter(world_happ, !(country %in% one_country$country))
+(sum(dplyr::count(world_happ_subset,country)==1))  # no remaining issues with only 1 data point
+counts_subset<-(world_happ_subset %>% count(country)) 
+
+world_happ_subset_balanced <- filter(world_happ, country %in% five_country$country)
+
+world_happ_subset_3ormore <- filter(world_happ, country %in% three_country$country)
+
+world_happ_subset_4ormore <- filter(world_happ, country %in% four_country$country)
+
+
+```
+
+
+```{r EDA}
+
+table(world_happ$year, exclude=FALSE)
+table(world_happ_subset$year, exclude = FALSE)
+table(world_happ_subset_3ormore$year)
+table(world_happ_subset_4ormore$year)
+table(world_happ_subset_balanced$year, exclude = FALSE)
+
+```
+While the number of countries varies per year, there are nearly the same number. Also, which countries are represented in the sample varies by year. While some countries, such as Zambia, are in the sample 5 times, others, such Oman are listed only once. These are not balanced, which is acceptable in this model. Data sets were created with countries with all countries, countries with groups greater than 2, countries with groups greater than 3, countries with groups greater than 4, and countries that are present in all 5 waves. This was in an attempt to get the random effects on year along with country.
+
+```{r}
+summary(world_happ)
+```
+```{r}
+boxplot(world_happ$GDP.per.capita, xlab = "GDP per capita")
+hist(world_happ$GDP.per.capita, xlab = "GDP per capita")
+qqplot(x = world_happ$GDP.per.capita, y = world_happ$score)
+```
+
+```{r}
+boxplot(world_happ$social.support, xlab = 'social support')
+hist(world_happ$social.support, xlab = 'social support')
+qqplot(world_happ$social.support, y = world_happ$score)
+```
+
+```{r}
+boxplot(world_happ$life.expectancy, xlab = 'healthy life expectancy')
+hist(world_happ$life.expectancy, xlab = 'healthy life expectancy')
+qqplot(world_happ$life.expectancy, y = world_happ$score)
+```
+
+```{r}
+boxplot(world_happ$freedom.choices, xlab = "freedom to make choices")
+hist(world_happ$freedom.choices, xlab = "freedom to make choices")
+qqplot(world_happ$freedom.choices, y = world_happ$score)
+```
+
+```{r}
+boxplot(world_happ$perceptions.corruption,xlab = "perceptions of corruption")
+hist(world_happ$perceptions.corruption,xlab = "perceptions of corruption")
+qqplot(world_happ$perceptions.corruption, y = world_happ$score)
+```
+
+```{r}
+boxplot(world_happ$generosity,xlab = "generosity")
+hist(world_happ$generosity,xlab = "generosity")
+qqplot(world_happ$generosity, y = world_happ$score)
+```
+
+```{r}
+hist(world_happ_subset_balanced$score)
+
+```
+
+
+```{r}
+boxplot(world_happ$score,xlab = 'score')
+```
+
+
+```{r}
+hist(world_happ$score,xlab = 'score')
+```
+
+Outcome variable has solid normality and no outliers. 
+
+```{r}
+max(world_happ$generosity)
+max(world_happ$perceptions.corruption)
+max(world_happ$social.support)
+```
+
+```{r}
+# confirm structure of data frame
+str(world_happ)
+```
+
+```{r}
+(m0 <- lmer(score~year + (1 | country ), world_happ)) # simplest model, full data set
+```
+
+```{r}
+(m0.balanced <- lmer(score~year + (1 | country ), world_happ_subset_balanced)) # simplest model; all five waves
+
+```
+
+```{r}
+#(m0.1 <- lmer(score~year + (year | country ), world_happ_subset_4ormore)) #  subset data
+#commented out because causing error due to non-convergence
+
+```
+
+```{r}
+(m1.0 <- lmer(score~year + GDP.per.capita  + (1 | country ), world_happ)) # random effects on country only
+(m1.balanced <- lmer(score~year + GDP.per.capita  + (1 | country ), world_happ_subset_balanced)) # random effects on country only
+```
+
+```{r}
+#(m1.1 <- lmer(score~ GDP.per.capita  + (year | country ), world_happ_subset_balanced)) #random on year & country
+#commented out because causing error due to non-convergence
+
+```
+
+
+```{r}
+(m2.0 <- lmer(score~year + GDP.per.capita  + life.expectancy + (1 | country ), world_happ))
+(m2.balanced <- lmer(score~year + GDP.per.capita  + life.expectancy + (1 | country ), world_happ_subset_balanced))
+
+```
+```{r}
+#(m2.1 <- lmer(score~year + GDP.per.capita  + life.expectancy + (year | country ), world_happ_subset_balanced))
+#commented out because causing error due to non-convergence
+```
+
+
+```{r}
+(m3.0 <- lmer(score~year + GDP.per.capita  + life.expectancy + perceptions.corruption + (1 | country ), world_happ))
+(m3.balanced <- lmer(score~year + GDP.per.capita  + life.expectancy + perceptions.corruption + (1 | country ), world_happ_subset_balanced))
+
+```
+
+```{r}
+#(m3.1 <- lmer(score~year + GDP.per.capita  + life.expectancy + perceptions.corruption + (year | country), world_happ_subset_balanced))
+#commented out because causing error due to non-convergence
+```
+
+```{r}
+(m4.0 <- lmer(score~year + GDP.per.capita  + life.expectancy + perceptions.corruption + social.support 
+              + (1 | country ), world_happ))
+
+(m4.balanced <- lmer(score~year + GDP.per.capita  + life.expectancy + perceptions.corruption + social.support 
+              + (1 | country ), world_happ_subset_balanced))
+
+```
+
+```{r}
+#(m4.1 <- lmer(score ~ year + GDP.per.capita + perceptions.corruption + life.expectancy  + social.support + ( year | country ), world_happ_subset_balanced))
+#commented out because causing error due to non-convergence
+
+```
+
+```{r}
+(m5.0 <- lmer(score~as.factor(year) + GDP.per.capita  + life.expectancy + perceptions.corruption + social.support +
+              freedom.choices + (1 | country ), world_happ))
+
+(m5.balanced <- lmer(score~as.factor(year) + GDP.per.capita  + life.expectancy + perceptions.corruption + social.support + freedom.choices + (1 | country ), world_happ_subset_balanced))
+
+```
+
+```{r}
+#(m5.1 <- lmer(score ~ year + GDP.per.capita  + life.expectancy + perceptions.corruption + social.support + freedom.choices  + ( year | country ), world_happ_subset_balanced))
+#commented out because causing error due to non-convergence
+```
+
+```{r}
+(m6.0 <- lmer(score~as.factor(year) + GDP.per.capita  + life.expectancy + perceptions.corruption + social.support +
+              freedom.choices + generosity + (1 | country ), world_happ))
+
+(m6.balanced <- lmer(score~as.factor(year) + GDP.per.capita  + life.expectancy + perceptions.corruption + social.support + freedom.choices + generosity + (1 | country ), world_happ_subset_balanced))
+
+```
+
+```{r}
+#(m6.1 <- lmer(score~ year + GDP.per.capita  + life.expectancy + perceptions.corruption + social.support +
+#            freedom.choices  + generosity + ( as.factor(year) | country ), world_happ_subset_balanced))
+#commented out because causing error due to non-convergence
+```
+
+
+Now to find which is the best model. All are nested models, so I will start with the most complex and use the ANOVA function to work my way down to the least complex. 
+
+All of the models in which both country and year were allowed to have random effects had issues. 
+Either they did not converge, or their boundaries were singular. As a result, I used the less complex
+models with only the country as a random effect. 
+
+
+```{r}
+anova(m6.balanced,m5.balanced)
+```
+With a p value of 0.03524, we reject the null. Therefore we keep the more complex model m6.balanced.
+
+```{r}
+anova(m6.balanced,m4.balanced) # m6.balanced is the most significant model overall
+anova(m6.balanced,m3.balanced) 
+anova(m6.balanced,m2.balanced)
+anova(m6.balanced,m1.balanced)
+anova(m6.balanced,m0.balanced)
+
+```
+In each model, model 6 is significant.
+```{r}
+summary(m6.balanced)
+```
+
+```{r}
+plot(m6.balanced)
+```
+
+
+```{r}
+# Test Assumptions
+
+#resid() calls for the residuals of the model, Score was our initial outcome variables;Plots the residuals vs observed
+Plot.Model.6.Balanced.Linearity<-plot(resid(m6.balanced),world_happ_subset_balanced$score) 
+
+world_happ_subset_balanced$Model.6Bal.Res<- residuals(m6.balanced) #extracts the residuals and places them in a new column in our original data table
+world_happ_subset_balanced$Abs.Model.6Bal.Res <-abs(world_happ_subset_balanced$Model.6Bal.Res) #creates a new column with the absolute value of the residuals
+world_happ_subset_balanced$Model.6Bal.Res2 <- (world_happ_subset_balanced$Abs.Model.6Bal.Res)^2 #squares the absolute values of the residuals to provide the more robust estimate
+Levene.Model.6Bal <- lm(Model.6Bal.Res2 ~ score, data=world_happ_subset_balanced) #ANOVA of the squared residuals
+anova(Levene.Model.6Bal) #displays the results
+qqmath(m6.balanced, id=0.05)
+```
+
+```{r}
+#(ranef(m6.balanced)[["country"]])
+(rownames(ranef(m6.balanced)[["country"]])[which(abs(ranef(m6.balanced)[["country"]])>1)])
+
+```
+
+
+```{r}
+# "Botswana"   "Costa Rica" "Rwanda"     "Sri Lanka"  "Syria" 
+#-1.505080  1.112693 -1.049933 -1.190229 -1.060280
+
+#ranef(m6.balanced)[["country"]][which(abs(ranef(m6.balanced)[["country"]])>1),]
+#which(abs(ranef(m6.balanced)[["country"]])>1)
+#ranef(m6.balanced)[["country"]][which(abs(ranef(m6.balanced)[["country"]])>1)]
+```
+```{r}
+summary(m6.balanced)
+```
+
